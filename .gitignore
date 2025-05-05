@@ -1,0 +1,39 @@
+# Node.js
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+pnpm-debug.log
+
+# Hardhat build artifacts
+artifacts/
+cache/
+typechain/
+coverage/
+dist/
+
+# Hardhat config environments
+.env
+.env.*
+!.env.example
+
+# Hardhat temporary files
+*.tsbuildinfo
+*.log
+
+# VS Code workspace
+.vscode/
+.history/
+
+# Logs and deployment records
+scripts/*.txt
+scripts/logs/
+scripts/last-collection-address.txt
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Optional: compiled ABIs for frontend
+frontend/src/abis/
+frontend/.next/
