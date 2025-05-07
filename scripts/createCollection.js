@@ -2,10 +2,10 @@ const { ethers } = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 const { parseEther, formatEther, keccak256, toUtf8Bytes } = require("ethers");
+require("dotenv").config();
 
-function createLogger(filename) {
-  const logPath = path.join(__dirname, filename);
-  const stream = fs.createWriteStream(logPath, { flags: "a" });
+function createLogger(filePath) {
+  const stream = fs.createWriteStream(filePath, { flags: "a" });
 
   function log(...args) {
     const message = args.join(" ");
@@ -20,28 +20,56 @@ function createLogger(filename) {
   };
 }
 
+function getNextIndexedFilePair(logsDir, addrDir, prefix, logSuffix, addrSuffix) {
+  if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+  if (!fs.existsSync(addrDir)) fs.mkdirSync(addrDir, { recursive: true });
+
+  const files = fs.readdirSync(logsDir);
+  const indexes = files
+    .map(f => f.match(new RegExp(`^${prefix}(\\d+)${logSuffix.replace('.', '\\.')}$`)))
+    .filter(Boolean)
+    .map(match => parseInt(match[1], 10));
+
+  const nextIndex = indexes.length > 0 ? Math.max(...indexes) + 1 : 0;
+
+  return {
+    index: nextIndex,
+    logPath: path.join(logsDir, `${prefix}${nextIndex}${logSuffix}`),
+    addrPath: path.join(addrDir, `${prefix}${nextIndex}${addrSuffix}`)
+  };
+}
+
 async function main() {
-  const logger = createLogger("create-collection-log.txt");
-  logger.log("🎯 Starting collection creation");
+  const logsDir = path.join(__dirname, "../logs");
+  const addrDir = path.join(__dirname, "../addresses");
+
+  const { index, logPath, addrPath } = getNextIndexedFilePair(
+    logsDir,
+    addrDir,
+    "createCollection",
+    "Log.md",
+    "Address.md"
+  );
+
+  const logger = createLogger(logPath);
+  logger.log(`# 🎯 Starting collection creation (Index ${index})`);
 
   const [deployer] = await ethers.getSigners();
   const balance = await ethers.provider.getBalance(deployer.address);
   logger.log("📡 Creator address:", deployer.address);
   logger.log("💰 ETH balance:", formatEther(balance), "ETH");
 
-  // === Factory address (already deployed) ===
-  const factoryAddress = "0x6C487784150BBd6a1E7Cc145a998A20D42ADCe5D";
+  const factoryAddress = process.env.FACTORY_ADDRESS;
   const Factory = await ethers.getContractFactory("ERC721AFactory");
   const factory = await Factory.attach(factoryAddress);
   logger.log("🏭 Connected to factory at:", factoryAddress);
 
-  // === Collection params ===
-  const name = "";
-  const symbol = "";
+  const name = "Test";
+  const symbol = "TST";
   const baseURI = "";
-  const maxSupply = 0;
-  const pricePerToken = 0
-  const accessCode = ""; // Optional: leave "" for public
+  const maxSupply = 100;
+  const pricePerToken = 100;
+  const accessCode = "optional";
   const accessCodeHash = keccak256(toUtf8Bytes(accessCode));
 
   logger.log("📝 Collection Config:");
@@ -52,7 +80,6 @@ async function main() {
   logger.log("   Price:", formatEther(pricePerToken), "ETH");
   logger.log("   Access code hash:", accessCodeHash);
 
-  // === Send the tx ===
   logger.log("📨 Sending createCollection transaction...");
   const tx = await factory.createCollection(
     name,
@@ -62,10 +89,10 @@ async function main() {
     pricePerToken,
     accessCode
   );
+
   const receipt = await tx.wait();
   logger.log("🔗 TX hash:", receipt.hash);
 
-  // === Parse emitted CollectionCreated event ===
   const parsed = receipt.logs
     .map(log => {
       try {
@@ -76,35 +103,27 @@ async function main() {
     })
     .find(e => e && e.name === "CollectionCreated");
 
-  if (!parsed) {
-    throw new Error("❌ Event not found: CollectionCreated");
-  }
+  if (!parsed) throw new Error("❌ Event not found: CollectionCreated");
 
   const collectionAddress = parsed.args.collection;
   logger.log("✅ Collection deployed at:", collectionAddress);
 
-  // === Verify metadata on-chain ===
   const Collection = await ethers.getContractAt("ERC721ACollection", collectionAddress);
-  const actualName = await Collection.name();
-  const actualSymbol = await Collection.symbol();
-  const actualPrice = await Collection.pricePerToken();
-  const actualSupply = await Collection.maxSupply();
-  const actualBaseURI = await Collection.baseURI();
-  const actualHash = await Collection.accessCodeHash();
-
   logger.log("🔍 On-Chain Verification:");
-  logger.log("   Name:", actualName);
-  logger.log("   Symbol:", actualSymbol);
-  logger.log("   Price per token:", formatEther(actualPrice), "ETH");
-  logger.log("   Max supply:", actualSupply.toString());
-  logger.log("   Base URI:", actualBaseURI);
-  logger.log("   Access hash:", actualHash);
+  logger.log("- Name:", await Collection.name());
+  logger.log("- Symbol:", await Collection.symbol());
+  logger.log("- Price per token:", formatEther(await Collection.pricePerToken()), "ETH");
+  logger.log("- Max supply:", (await Collection.maxSupply()).toString());
+  logger.log("- Base URI:", await Collection.baseURI());
+  logger.log("- Access hash:", await Collection.accessCodeHash());
 
-  // === Save deployed address
-  fs.writeFileSync(path.join(__dirname, "last-collection-address.txt"), collectionAddress + "\n");
+  const content = `Collection Address (Instance ${index})\n\n` +
+                  `Contract Address: \`${collectionAddress}\`\n\n` +
+                  `Transaction Hash: \`${receipt.hash}\`\n`;
 
-  logger.log("📦 Saved to last-collection-address.txt");
-  logger.log("✅ Collection creation complete.");
+  fs.writeFileSync(addrPath, content);
+  logger.log("📦 Saved address to:", addrPath);
+  logger.log("✅ Collection creation complete");
   logger.close();
 }
 

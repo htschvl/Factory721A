@@ -5,7 +5,6 @@ module.exports = {
   defaultNetwork: "hardhat",
   networks: {
     hardhat: {
-      // Local in-memory Hardhat network
     }
   },
   solidity: {
