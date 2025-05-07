@@ -34,6 +34,12 @@ npm install ethers
 ```
 ---
 
+## 🔧 Configurations
+
+Fill ```hardhat.config.js``` with your own info.
+
+---
+
 ## 🛠️ Scripts
 
 ### 1. 🚀 Create a New NFT Collection

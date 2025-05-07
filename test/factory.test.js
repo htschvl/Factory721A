@@ -151,4 +151,74 @@ describe("ERC721AFactory + Collection Integration", function () {
 
     expect(after > before - gasUsed).to.be.true;
   });
+
+  it("allows owner to mint 100 NFTs to self", async () => {
+    const collection = await createCollection("BigMint", "BIG", "https://bulk/", 0, "0", "");
+
+    const uris = Array.from({ length: 100 }, (_, i) => `ipfs://bulk/${i}.json`);
+    await collection.ownerMint(owner.address, 100, uris);
+
+    expect(await collection.totalSupply()).to.equal(100n);
+    expect(await collection.ownerOf(99)).to.equal(owner.address);
+  });
+
+  describe("publicMint with access code, price, and cap", function () {
+    let collection;
+    const accessCode = "access123";
+    const hashedCode = ethers.keccak256(ethers.toUtf8Bytes(accessCode));
+
+    beforeEach(async () => {
+      collection = await createCollection(
+        "GateMint",
+        "GTM",
+        "https://gated/",
+        5,                  // Max supply
+        "0.05",             // Price per token
+        accessCode          // Access code
+      );
+    });
+
+    it("fails with wrong access code", async () => {
+      await expect(
+        collection.connect(user1).publicMint(1, "wrong", {
+          value: parseEther("0.05")
+        })
+      ).to.be.revertedWith("Invalid access code");
+    });
+
+    it("fails with insufficient ETH", async () => {
+      await expect(
+        collection.connect(user1).publicMint(1, accessCode, {
+          value: parseEther("0.01")
+        })
+      ).to.be.revertedWith("Insufficient ETH sent");
+    });
+
+    it("fails when supply is exceeded", async () => {
+      // Mint all supply
+      await collection.connect(user1).publicMint(5, accessCode, {
+        value: parseEther("0.25")
+      });
+
+      // Try minting 1 more
+      await expect(
+        collection.connect(user2).publicMint(1, accessCode, {
+          value: parseEther("0.05")
+        })
+      ).to.be.revertedWith("Max supply exceeded");
+    });
+
+    it("succeeds when access, payment, and supply are all valid", async () => {
+      await collection.connect(user1).publicMint(5, accessCode, {
+        value: parseEther("0.25")
+      });
+
+      expect(await collection.totalSupply()).to.equal(5n);
+      for (let i = 0; i < 5; i++) {
+        expect(await collection.ownerOf(i)).to.equal(user1.address);
+      }
+    });
+  });
+
+  
 });
