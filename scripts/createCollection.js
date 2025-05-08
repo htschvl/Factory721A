@@ -1,23 +1,35 @@
-const { ethers } = require("hardhat");
 const fs = require("fs");
 const path = require("path");
-const { parseEther, formatEther, keccak256, toUtf8Bytes } = require("ethers");
+const { ethers } = require("hardhat");
+const { formatEther, keccak256, toUtf8Bytes } = require("ethers");
 require("dotenv").config();
 
 function createLogger(filePath) {
   const stream = fs.createWriteStream(filePath, { flags: "a" });
-
   function log(...args) {
     const message = args.join(" ");
     const timestamp = `[${new Date().toISOString()}]`;
     console.log(message);
     stream.write(`${timestamp} ${message}\n`);
   }
-
   return {
     log,
     close: () => stream.end()
   };
+}
+
+function box(title) {
+  const bar = "═".repeat(title.length + 2);
+  return {
+    top: `╔${bar}╗\n║ ${title} ║\n╚${bar}╝`
+  };
+}
+
+function section(title) {
+  const totalWidth = 60;
+  const label = `═ ${title.toUpperCase()} `;
+  const line = label + "═".repeat(Math.max(0, totalWidth - label.length));
+  return `\n${line}`;
 }
 
 function getNextIndexedFilePair(logsDir, addrDir, prefix, logSuffix, addrSuffix) {
@@ -40,8 +52,8 @@ function getNextIndexedFilePair(logsDir, addrDir, prefix, logSuffix, addrSuffix)
 }
 
 async function main() {
-  const logsDir = path.join(__dirname, "../logs");
-  const addrDir = path.join(__dirname, "../addresses");
+  const logsDir = path.join(__dirname, "../logs/createCollection");
+  const addrDir = path.join(__dirname, "../addresses/createCollection");
 
   const { index, logPath, addrPath } = getNextIndexedFilePair(
     logsDir,
@@ -52,35 +64,41 @@ async function main() {
   );
 
   const logger = createLogger(logPath);
-  logger.log(`# 🎯 Starting collection creation (Index ${index})`);
+  logger.log(box(`🎯 Iniciando Deploy (Index ${index})`).top);
 
   const [deployer] = await ethers.getSigners();
   const balance = await ethers.provider.getBalance(deployer.address);
-  logger.log("📡 Creator address:", deployer.address);
-  logger.log("💰 ETH balance:", formatEther(balance), "ETH");
+  logger.log(section("📡 Contexto do Deploy"));
+  logger.log("  Criador:       ", deployer.address);
+  logger.log("  Saldo (ETH):   ", formatEther(balance));
 
-  const factoryAddress = process.env.FACTORY_ADDRESS;
+  const factoryAddress = "0x0000000000000000000000000000000000000000";
   const Factory = await ethers.getContractFactory("ERC721AFactory");
-  const factory = await Factory.attach(factoryAddress);
-  logger.log("🏭 Connected to factory at:", factoryAddress);
+  const factory = Factory.attach(factoryAddress);
+
+  const code = await ethers.provider.getCode(factoryAddress);
+  if (code === "0x") throw new Error("❌ No contract found at factoryAddress");
+
+  logger.log(section("🏗️  Factory"));
+  logger.log("  Endereço:      ", factoryAddress);
+  logger.log("  Bytecode OK:   ", code !== "0x" ? "✅" : "❌");
 
   const name = "Test";
   const symbol = "TST";
   const baseURI = "";
   const maxSupply = 100;
   const pricePerToken = 100;
-  const accessCode = "optional";
+  const accessCode = "";
   const accessCodeHash = keccak256(toUtf8Bytes(accessCode));
 
-  logger.log("📝 Collection Config:");
-  logger.log("   Name:", name);
-  logger.log("   Symbol:", symbol);
-  logger.log("   Base URI:", baseURI);
-  logger.log("   Max Supply:", maxSupply);
-  logger.log("   Price:", formatEther(pricePerToken), "ETH");
-  logger.log("   Access code hash:", accessCodeHash);
+  logger.log(section("📝 Configuração da Collection"));
+  logger.log("  Nome:          ", name);
+  logger.log("  Símbolo:       ", symbol);
+  logger.log("  Base URI:      ", baseURI || "(vazio)");
+  logger.log("  Max Supply:    ", maxSupply);
+  logger.log("  Preço:         ", formatEther(pricePerToken), "ETH");
+  logger.log("  Access Hash:   ", accessCodeHash);
 
-  logger.log("📨 Sending createCollection transaction...");
   const tx = await factory.createCollection(
     name,
     symbol,
@@ -91,39 +109,53 @@ async function main() {
   );
 
   const receipt = await tx.wait();
-  logger.log("🔗 TX hash:", receipt.hash);
+  logger.log(section("📤 Transação"));
+  logger.log("  TX hash:       ", receipt.hash);
 
-  const parsed = receipt.logs
-    .map(log => {
-      try {
-        return factory.interface.parseLog(log);
-      } catch {
-        return null;
+  let collectionAddress;
+
+  logger.log(section("📦 Eventos Emitidos"));
+  for (const log of receipt.logs) {
+    try {
+      const parsed = factory.interface.parseLog(log);
+      if (parsed.name === "CollectionCreated") {
+        collectionAddress = parsed.args[1];
+        logger.log("  ✅ CollectionCreated:", collectionAddress);
+        break;
       }
-    })
-    .find(e => e && e.name === "CollectionCreated");
+    } catch {
+      continue;
+    }
+  }
 
-  if (!parsed) throw new Error("❌ Event not found: CollectionCreated");
-
-  const collectionAddress = parsed.args.collection;
-  logger.log("✅ Collection deployed at:", collectionAddress);
+  if (!collectionAddress) {
+    throw new Error("❌ Event not found: CollectionCreated");
+  }
 
   const Collection = await ethers.getContractAt("ERC721ACollection", collectionAddress);
-  logger.log("🔍 On-Chain Verification:");
-  logger.log("- Name:", await Collection.name());
-  logger.log("- Symbol:", await Collection.symbol());
-  logger.log("- Price per token:", formatEther(await Collection.pricePerToken()), "ETH");
-  logger.log("- Max supply:", (await Collection.maxSupply()).toString());
-  logger.log("- Base URI:", await Collection.baseURI());
-  logger.log("- Access hash:", await Collection.accessCodeHash());
+  logger.log(section("🔍 On-chain Verification"));
+  logger.log("  name():         ", await Collection.name());
+  logger.log("  symbol():       ", await Collection.symbol());
+  logger.log("  pricePerToken():", formatEther(await Collection.pricePerToken()), "ETH");
+  logger.log("  maxSupply():    ", (await Collection.maxSupply()).toString());
+  logger.log("  baseURI():      ", await Collection.baseURI());
+  logger.log("  accessHash():   ", await Collection.accessCodeHash());
+
+  const gasPrice = receipt.effectiveGasPrice ?? receipt.gasPrice;
+  logger.log(section("💹 Custo da Transação"));
+  logger.log("  Gás usado:      ", receipt.gasUsed.toString(), "units");
+  logger.log("  Gás price:      ", formatEther(gasPrice), "NATIVE");
+  logger.log("  Custo total:    ", formatEther(gasPrice * receipt.gasUsed), "NATIVE");
 
   const content = `Collection Address (Instance ${index})\n\n` +
                   `Contract Address: \`${collectionAddress}\`\n\n` +
                   `Transaction Hash: \`${receipt.hash}\`\n`;
 
   fs.writeFileSync(addrPath, content);
-  logger.log("📦 Saved address to:", addrPath);
-  logger.log("✅ Collection creation complete");
+
+  logger.log(section("📦 Output"));
+  logger.log("  Endereço salvo:", addrPath);
+  logger.log("✅ Collection criada com sucesso");
   logger.close();
 }
 

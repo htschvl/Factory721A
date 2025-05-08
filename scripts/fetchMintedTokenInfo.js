@@ -1,8 +1,7 @@
-const { ethers } = require("hardhat");
 const fs = require("fs");
-const path = require("path");
-const { formatEther, parseEther } = require("ethers");
-require("dotenv").config();
+const path = require("path")
+const { ethers } = require("hardhat");
+const { formatEther, keccak256, toUtf8Bytes } = require("ethers");
 
 
 function getNextIndexedFilePair(logsDir, mintedDir, prefix, logSuffix, mintedSuffix) {
@@ -42,8 +41,8 @@ function createLogger(filePath) {
 
 async function main() {
 
-  const logsDir = path.join(__dirname, "../logs");
-  const mintedDir = path.join(__dirname, "../minted");
+  const logsDir = path.join(__dirname, "../logs/findMintedTokenInfo");
+  const mintedDir = path.join(__dirname, "../mintedTokens/findMintedTokenInfo");
 
   const { index, logPath, mintedPath } = getNextIndexedFilePair(
     logsDir,
@@ -57,16 +56,17 @@ async function main() {
 
   logger.log(`# 📦 Token Inspection Log (Run ${index})`);
 
-  const Collection = await ethers.getContractAt( "ERC721ACollection", string(process.env.CONTRACT_ADDRESS));
+  const collectionAddress = "0x0000000000000000000000000000000000000000"; ;  /// Your deployed collection addresx
+  const Collection = await ethers.getContractAt( "ERC721ACollection", collectionAddress );
 
-  logger.log("🔗 **Connected to Collection:**", process.env.CONTRACT_ADDRESS);
+  logger.log("🔗 **Connected to Collection:**", collectionAddress);
 
 
   const total = await Collection.totalSupply();
   console.log("🔢 Total tokens minted:", total.toString());
 
   let md = `# 🧾 Minted Tokens Summary\n\n`;
-  md += `**Collection Address:** \`${collectionAddress}\`\n\n`;
+  md += `Collection Address: \`${collectionAddress}\`\n\n`;
   md += `| Token ID | Owner | URI |\n`;
   md += `|----------|--------|-----|\n`;
 
