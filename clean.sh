@@ -7,6 +7,9 @@
 
 echo "🔄 Iniciando limpeza do projeto..."
 
+yarn hardhat clean
+yarn clean
+
 # Remover diretórios e arquivos temporários
 rm -rf \
   node_modules \
